@@ -1,25 +1,18 @@
 import imaplib
-import email
 from email.header import decode_header
-import traceback
 import base64
 import re
 from datetime import datetime
-import config
 from bs4 import BeautifulSoup
-from aiogram import Bot, Dispatcher, executor, types
-import aiohttp
+from aiogram import Bot
 import asyncio
 import quopri
 
 
-def connection():
-    mail_pass = config.mail_pass
-    username = config.username
-    imap_server = config.imap_server
+def connection(username, mail_pass, imap_server):
     imap = imaplib.IMAP4_SSL(imap_server)
-    sts, res = imap.login(username, mail_pass)
-    if sts == "OK":
+    status, res = imap.login(username, mail_pass)
+    if status == "OK":
         return imap
     else:
         return False
@@ -72,10 +65,10 @@ def date_parse(msg_date):
 
 def from_subj_decode(msg_from_subj):
     if msg_from_subj:
-        encoding = decode_header(msg_from_subj)[0][1]
+        # encoding = decode_header(msg_from_subj)[0][1]
         msg_from_subj = decode_header(msg_from_subj)[0][0]
         if isinstance(msg_from_subj, bytes):
-            msg_from_subj = msg_from_subj.decode(encoding)
+            msg_from_subj = msg_from_subj.decode()
         if isinstance(msg_from_subj, str):
             pass
         msg_from_subj = str(msg_from_subj).strip("<>").replace("<", "")
@@ -84,26 +77,26 @@ def from_subj_decode(msg_from_subj):
         return None
 
 
-async def send_message(bot_token, message, chat, rpl=None, prv=None):
+async def tg_send_message(bot_token, message, chat, reply=None, preview=None):
     bot = Bot(token=bot_token)
     await bot.get_session()
     obj = await bot.send_message(
         chat_id=chat,
         text=message,
         parse_mode="HTML",
-        reply_to_message_id=rpl,
-        disable_web_page_preview=prv,
+        reply_to_message_id=reply,
+        disable_web_page_preview=preview,
     )
     await asyncio.sleep(3)
     await bot._session.close()
     return obj.message_id
 
 
-async def send_document(document, filename, caption=None, prv=None, rpl=None):
-    bot = Bot(token=config.bot_key)
+async def tg_send_document(bot_token, chat_id, document, filename, caption=None, preview=None, reply=None):
+    bot = Bot(bot_token)
     await bot.get_session()
     obj = await bot.send_document(
-        config.chat_id, (filename, document), caption=caption, reply_to_message_id=rpl
+        chat_id, (filename, document), caption=caption, reply_to_message_id=reply
     )
     await asyncio.sleep(2)
     await bot._session.close()
@@ -120,7 +113,7 @@ def get_letter_text_from_html(body):
             text += paragraph.text + "\n"
         return text.replace("\xa0", " ")
     except (Exception) as exp:
-        print("text ftom html err ", exp)
+        print("text from html error ", exp)
         return False
 
 
@@ -163,16 +156,16 @@ def get_letter_text(msg):
             return letter_text.replace("<", "").replace(">", "").replace("\xa0", " ")
 
 
-def send_attach(msg, msg_subj, repl):
+def get_send_attach(msg, msg_subj, repl, bot_token, chat_id):
     for part in msg.walk():
         if part.get_content_disposition() == "attachment":
             filename = part.get_filename()
             filename = from_subj_decode(filename)
             loop = asyncio.get_event_loop()
             loop.run_until_complete(
-                send_document(
-                    part.get_payload(decode=True), filename, caption=msg_subj, rpl=repl
-                )
+                tg_send_document(bot_token, chat_id,
+                                 part.get_payload(decode=True), filename, caption=msg_subj, reply=repl
+                                 )
             )
 
 
